@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo } from 'react';
+import am from 'automerge';
 import TodoItem from './TodoItem';
 import Footer from './Footer';
 import { uuid } from './utils';
@@ -12,14 +13,16 @@ const useTodoModel = () => {
   const [nowShowing, setNowShowing] = useState(FILTER.ALL_TODOS);
   const [editing, setEditing] = useState(null);
   const [newTodo, setNewTodo] = useState('');
-  const [todos, setTodos] = useState([]);
+  const [todos, setTodos] = useState(am.from({ list: [] }));
 
   const addTodo = useCallback((title = '') => {
-    setTodos(todos => todos.concat({
-      id: uuid(),
-      completed: false,
-      title,
-    }));
+    setTodos(todos => am.change(todos, 'Add Todo', todos =>
+      todos.list.push({
+        id: uuid(),
+        completed: false,
+        title,
+      })
+    ))
   }, []);
 
   const updateNewTodo = useCallback((val = '') => {
@@ -27,23 +30,42 @@ const useTodoModel = () => {
   }, []);
 
   const toggleAll = useCallback((checked) => {
-    setTodos(todos => todos.map(todo => ({ ...todo, completed: checked })));
+    setTodos(todos => am.change(todos, 'Toggle All', todos =>
+      todos.list.forEach(todo => {
+        todo.completed = checked;
+      })
+    ))
   }, []);
 
-  const toggle = useCallback((todoToToggle) => {
-    setTodos(todos => todos.map(todo => todo !== todoToToggle ? todo : ({ ...todo, completed: !todo.completed })));
+  const toggle = useCallback((todoId) => {
+    setTodos(todos => am.change(todos, 'Toggle', todos => {
+      const idx = todos.list.findIndex(todo => todo.id === todoId);
+      if (idx !== -1) {
+        todos.list[idx].completed = !todos.list[idx].completed;
+      }
+    }))
   }, []);
 
-  const destroy = useCallback((todoToDelete) => {
-    setTodos(todos => todos.filter(todo => todo !== todoToDelete));
+  const destroy = useCallback((todoId) => {
+    setTodos(todos => am.change(todos, 'Delete', todos => {
+      const idx = todos.list.findIndex(todo => todo.id === todoId);
+      if (idx !== -1) {
+        delete todos.list[idx]
+      }
+    }));
   }, []);
 
   const edit = useCallback((todo) => {
     setEditing(todo.id);
   }, []);
 
-  const save = useCallback((todoToSave, title) => {
-    setTodos(todos => todos.map(todo => todo !== todoToSave ? todo : { ...todo, title }));
+  const save = useCallback((todoId, title) => {
+    setTodos(todos => am.change(todos, 'Change Title', todos => {
+      const idx = todos.list.findIndex(todo => todo.id === todoId);
+      if (idx !== -1) {
+        todos.list[idx].title = title;
+      }
+    }));
     setEditing(null);
   }, []);
 
@@ -52,10 +74,21 @@ const useTodoModel = () => {
   }, []);
 
   const clearCompleted = useCallback(() => {
-    setTodos(todos => todos.filter(todo => !todo.completed));
+    setTodos(todos => am.change(todos, 'Clear Completed', todos => {
+      let idxlst = []
+      todos.list.forEach((todo, idx) => {
+        if (todo.completed) {
+          idxlst.unshift(idx);
+        }
+      })
+
+      idxlst.forEach(idx => {
+        delete todos.list[idx]
+      })
+    }))
   }, []);
 
-  return [{ nowShowing, editing, newTodo, todos }, { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing }];
+  return [{ nowShowing, editing, newTodo, todos: todos.list }, { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing }];
 }
 
 const useFilterTodos = (todos = [], nowShowing = FILTER.ALL_TODOS) => useMemo(
@@ -95,24 +128,24 @@ function App() {
       updateNewTodo('');
       addTodo(val);
     }
-  }, [newTodo]);
+  }, [newTodo, addTodo, updateNewTodo]);
 
   const handleChange = useCallback((e) => {
     updateNewTodo(e.target.value);
-  }, []);
+  }, [updateNewTodo]);
 
   const handleToggleAll = useCallback((e) => {
     const checked = e.target.checked;
     toggleAll(checked);
-  }, []);
+  }, [toggleAll]);
 
   const handleClearCompleted = useCallback(() => {
     clearCompleted();
-  }, []);
+  }, [clearCompleted]);
 
   const handleChangeFilter = useCallback((filter) => {
     setNowShowing(filter);
-  }, []);
+  }, [setNowShowing]);
 
   let footer = null;
   if (activeTodoCount || completedCount) {
@@ -146,11 +179,11 @@ function App() {
             <TodoItem
               key={todo.id}
               todo={todo}
-              onToggle={toggle.bind(null, todo)}
-              onDestroy={destroy.bind(null, todo)}
+              onToggle={toggle.bind(null, todo.id)}
+              onDestroy={destroy.bind(null, todo.id)}
               onEdit={edit.bind(null, todo)}
               editing={editing === todo.id}
-              onSave={save.bind(null, todo)}
+              onSave={save.bind(null, todo.id)}
               onCancel={cancel.bind(null, todo)}
             />
           ))}
