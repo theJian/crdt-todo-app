@@ -1,5 +1,28 @@
 .App {}
 
 .App-header h1 {
-  line-height: 1.4rem;
+  line-height: 1. 4rem;
+}
+
+.panel {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  padding: 1rem;
+  color: #333;
+  font-family: monospace;
+}
+
+.panel p {
+  margin: 0;
+  padding: 0;
+}
+
+.panel p .value {
+  font-weight: bold;
+}
+
+.panel p .value.primary {
+  color: white;
+  background-color: #333;
 }

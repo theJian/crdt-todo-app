@@ -1,19 +1,31 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import am from 'automerge';
+import uuid from 'uuid/v4';
 import TodoItem from './TodoItem';
 import Footer from './Footer';
-import { uuid } from './utils';
+import Panel from './Panel';
 import { FILTER } from './constants';
+import { fetchId, fetchTodos } from './services';
 import './todomvc-app-css.css';
 import './App.css';
 
 const ENTER_KEY = 13;
+
+const appDocSet = new am.DocSet();
 
 const useTodoModel = () => {
   const [nowShowing, setNowShowing] = useState(FILTER.ALL_TODOS);
   const [editing, setEditing] = useState(null);
   const [newTodo, setNewTodo] = useState('');
   const [todos, setTodos] = useState(am.from({ list: [] }));
+  const [id, setId] = useState(null);
+  const [primaryId, setPrimaryId] = useState(null);
+
+  const initTodos = useCallback((list, id) => {
+    const todosDoc = am.from({ list }, id);
+    appDocSet.setDoc('todos', todosDoc);
+    setTodos(todosDoc);
+  }, []);
 
   const addTodo = useCallback((title = '') => {
     setTodos(todos => am.change(todos, 'Add Todo', todos =>
@@ -88,7 +100,7 @@ const useTodoModel = () => {
     }))
   }, []);
 
-  return [{ nowShowing, editing, newTodo, todos: todos.list }, { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing }];
+  return [{ nowShowing, editing, newTodo, todos: todos.list, id, primaryId }, { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, setId, setPrimaryId, initTodos }];
 }
 
 const useFilterTodos = (todos = [], nowShowing = FILTER.ALL_TODOS) => useMemo(
@@ -107,13 +119,12 @@ const useActiveTodoCount = (todos = []) => useMemo(
 
 function App() {
   const [
-    { nowShowing, editing, newTodo, todos },
-    { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing },
+    { nowShowing, editing, newTodo, todos, id, primaryId },
+    { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, setId, setPrimaryId, initTodos },
   ] = useTodoModel();
 
   const shownTodos = useFilterTodos(todos, nowShowing);
   const activeTodoCount = useActiveTodoCount(todos);
-  const completedCount = todos.length - activeTodoCount;
 
   const handleNewTodoKeyDown = useCallback((e) => {
     if (e.keyCode !== ENTER_KEY) {
@@ -146,6 +157,21 @@ function App() {
   const handleChangeFilter = useCallback((filter) => {
     setNowShowing(filter);
   }, [setNowShowing]);
+
+  useEffect(() => {
+    Promise.all([fetchId(), fetchTodos()]).then(data => {
+      const [{ id, primary }, { todos }] = data;
+      setId(id);
+      setPrimaryId(primary);
+      initTodos(todos, id);
+    });
+  }, []);
+
+  if (!id) {
+    return 'connecting';
+  }
+
+  const completedCount = todos.length - activeTodoCount;
 
   let footer = null;
   if (activeTodoCount || completedCount) {
@@ -194,6 +220,7 @@ function App() {
 
   return (
     <div className="App todoapp">
+      <Panel id={id} primary={primaryId == null} />
       <header className="App-header">
         <h1>
           CRDT todos
