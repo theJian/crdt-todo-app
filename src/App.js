@@ -1,6 +1,7 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import am from 'automerge';
 import uuid from 'uuid/v4';
+import Conn from './conn';
 import TodoItem from './TodoItem';
 import Footer from './Footer';
 import Panel from './Panel';
@@ -13,80 +14,105 @@ const ENTER_KEY = 13;
 
 const appDocSet = new am.DocSet();
 
+const useForceUpdate = () => {
+  const [, setState] = useState();
+  const update = useCallback(() => {
+    setState({})
+  }, []);
+  return update;
+}
+
 const useTodoModel = () => {
   const [nowShowing, setNowShowing] = useState(FILTER.ALL_TODOS);
   const [editing, setEditing] = useState(null);
   const [newTodo, setNewTodo] = useState('');
   const [todos, setTodos] = useState(am.from({ list: [] }));
-  const [id, setId] = useState(null);
-  const [primaryId, setPrimaryId] = useState(null);
+  const idRef = useRef();
+  const primaryIdRef = useRef();
 
-  const initTodos = useCallback((list, id) => {
-    const todosDoc = am.from({ list }, id);
-    appDocSet.setDoc('todos', todosDoc);
-    setTodos(todosDoc);
+  const updateTodos = useCallback((fn) => {
+    if (!idRef.current) {
+      throw new Error('expect id exists');
+    }
+
+    const doc = appDocSet.getDoc('todos') || am.init(idRef.current);
+    const nextDoc = fn(doc);
+    appDocSet.setDoc('todos', nextDoc);
+    setTodos(nextDoc);
   }, []);
 
+  const syncTodos = useCallback(() => {
+    const doc = appDocSet.getDoc('todos');
+    setTodos(doc);
+  }, []);
+
+  // const initTodos = useCallback((list) => {
+  //   updateTodos(() => {
+  //     return am.from({ list }, idRef.current);
+  //   });
+  // }, [updateTodos]);
+
   const addTodo = useCallback((title = '') => {
-    setTodos(todos => am.change(todos, 'Add Todo', todos =>
-      todos.list.push({
+    updateTodos(todos => am.change(todos, 'Add Todo', todos => {
+      if (!todos.list) {
+        todos.list = new am.Table(['id', 'completed', 'title']);
+      }
+      todos.list.add({
         id: uuid(),
         completed: false,
         title,
       })
-    ))
-  }, []);
+    }))
+  }, [updateTodos]);
 
   const updateNewTodo = useCallback((val = '') => {
     setNewTodo(val)
   }, []);
 
   const toggleAll = useCallback((checked) => {
-    setTodos(todos => am.change(todos, 'Toggle All', todos =>
-      todos.list.forEach(todo => {
+    updateTodos(todos => am.change(todos, 'Toggle All', todos =>
+      todos.list.map(todo => {
         todo.completed = checked;
       })
     ))
-  }, []);
+  }, [updateTodos]);
 
   const toggle = useCallback((todoId) => {
-    setTodos(todos => am.change(todos, 'Toggle', todos => {
-      const idx = todos.list.findIndex(todo => todo.id === todoId);
-      if (idx !== -1) {
-        todos.list[idx].completed = !todos.list[idx].completed;
+    updateTodos(todos => am.change(todos, 'Toggle', todos => {
+      const todo = todos.list.find(todo => todo.id === todoId);
+      if (todo) {
+        todo.completed = !todo.completed;
       }
     }))
-  }, []);
+  }, [updateTodos]);
 
   const destroy = useCallback((todoId) => {
-    setTodos(todos => am.change(todos, 'Delete', todos => {
-      const idx = todos.list.findIndex(todo => todo.id === todoId);
-      if (idx !== -1) {
-        delete todos.list[idx]
-      }
+    updateTodos(todos => am.change(todos, 'Delete', todos => {
+      todos.list.filter(todo => todo.id !== todoId)
     }));
-  }, []);
+  }, [updateTodos]);
 
   const edit = useCallback((todo) => {
     setEditing(todo.id);
   }, []);
 
   const save = useCallback((todoId, title) => {
-    setTodos(todos => am.change(todos, 'Change Title', todos => {
-      const idx = todos.list.findIndex(todo => todo.id === todoId);
-      if (idx !== -1) {
-        todos.list[idx].title = title;
-      }
+    updateTodos(todos => am.change(todos, 'Change Title', todos => {
+      todos.list.map(todo => {
+        if (todo.id === todoId) {
+          todo.title = title;
+        }
+      })
     }));
     setEditing(null);
-  }, []);
+  }, [updateTodos]);
 
   const cancel = useCallback(() => {
     setEditing(null);
   }, []);
 
   const clearCompleted = useCallback(() => {
-    setTodos(todos => am.change(todos, 'Clear Completed', todos => {
+    updateTodos(todos => am.change(todos, 'Clear Completed', todos => {
       let idxlst = []
       todos.list.forEach((todo, idx) => {
         if (todo.completed) {
@@ -98,9 +124,9 @@ const useTodoModel = () => {
         delete todos.list[idx]
       })
     }))
-  }, []);
+  }, [updateTodos]);
 
-  return [{ nowShowing, editing, newTodo, todos: todos.list, id, primaryId }, { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, setId, setPrimaryId, initTodos }];
+  return [{ nowShowing, editing, newTodo, todos: todos.list }, { syncTodos, addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, idRef, primaryIdRef }];
 }
 
 const useFilterTodos = (todos = [], nowShowing = FILTER.ALL_TODOS) => useMemo(
@@ -113,15 +139,17 @@ const useFilterTodos = (todos = [], nowShowing = FILTER.ALL_TODOS) => useMemo(
 );
 
 const useActiveTodoCount = (todos = []) => useMemo(
-  () => todos.reduce((acc, todo) => todo.completed ? acc : acc + 1, 0),
+  () => todos.filter(todo => !todo.completed).length,
   [todos]
 );
 
 function App() {
   const [
-    { nowShowing, editing, newTodo, todos, id, primaryId },
-    { addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, setId, setPrimaryId, initTodos },
+    { nowShowing, editing, newTodo, todos },
+    { syncTodos, addTodo, updateNewTodo, toggleAll, toggle, destroy, edit, save, cancel, clearCompleted, setNowShowing, idRef, primaryIdRef },
   ] = useTodoModel();
+  const connRef = useRef(null);
+  const forceUpdate = useForceUpdate();
 
   const shownTodos = useFilterTodos(todos, nowShowing);
   const activeTodoCount = useActiveTodoCount(todos);
@@ -161,17 +189,27 @@ function App() {
   useEffect(() => {
     Promise.all([fetchId(), fetchTodos()]).then(data => {
       const [{ id, primary }, { todos }] = data;
-      setId(id);
-      setPrimaryId(primary);
-      initTodos(todos, id);
+      idRef.current = id;
+      primaryIdRef.current = primary;
+      // initTodos(todos);
+      connRef.current = new Conn(id, appDocSet);
+      if (primary) {
+        connRef.current.connect(primary);
+      }
+      forceUpdate();
+    });
+
+    appDocSet.registerHandler((docId, doc) => {
+      console.log(JSON.stringify(appDocSet.docs, null, 2))
+      syncTodos();
     });
   }, []);
 
-  if (!id) {
+  if (!idRef.current) {
     return 'connecting';
   }
 
-  const completedCount = todos.length - activeTodoCount;
+  const completedCount = todos.count - activeTodoCount;
 
   let footer = null;
   if (activeTodoCount || completedCount) {
@@ -187,7 +225,7 @@ function App() {
   }
 
   let main = null;
-  if (todos.length) {
+  if (todos.count) {
     main = (
       <section className="main">
         <input
@@ -220,7 +258,7 @@ function App() {
 
   return (
     <div className="App todoapp">
-      <Panel id={id} primary={primaryId == null} />
+      <Panel id={idRef.current} primary={primaryIdRef.current == null} />
       <header className="App-header">
         <h1>
           CRDT todos

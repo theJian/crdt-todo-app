@@ -16,30 +16,28 @@ const Footer = ({ count, nowShowing, completedCount, onClearCompleted, onChangeF
     </span>
     <ul className="filters">
       <li>
-        <a
-          href="#"
+        <button
           onClick={onChangeFilter.bind(null, FILTER.ALL_TODOS)}
           className={cx({selected: nowShowing === FILTER.ALL_TODOS})}>
           All
-        </a>
+        </button>
       </li>
       {' '}
       <li>
-        <a
-          href="#"
+        <button
           onClick={onChangeFilter.bind(null, FILTER.ACTIVE_TODOS)}
           className={cx({selected: nowShowing === FILTER.ACTIVE_TODOS})}>
           Active
-        </a>
+        </button>
       </li>
       {' '}
       <li>
-        <a
+        <button
           href="#"
           onClick={onChangeFilter.bind(null, FILTER.COMPLETED_TODOS)}
           className={cx({selected: nowShowing === FILTER.COMPLETED_TODOS})}>
           Completed
-        </a>
+        </button>
       </li>
     </ul>
     {completedCount > 0 ? <ClearButton onClearCompleted={onClearCompleted} /> : null}

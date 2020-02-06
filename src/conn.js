@@ -1,32 +1,39 @@
 import Peer from 'peerjs';
 import am from 'automerge';
 
-let connections = {}
+const peerOption = {
+  host: 'localhost', port: 9000, path: '/peer',
+};
 
-const init = (peer) => {
-  peer.on('connection', conn => {
-    conn.on('data', msg => {
-      connections[conn.peer].receiveMsg(JSON.parse(msg));
-    })
-  })
+class Conn {
+  constructor(id, docSet) {
+    const peer = new Peer(id, peerOption);
+    peer.on('connection', conn => {
+      this.connect(conn.peer);
+      conn.on('data', msg => {
+        console.log('receive message:', msg)
+        this.connections[conn.peer].receiveMsg(JSON.parse(msg));
+      });
+    });
+    this.peer = peer;
+    this.docSet = docSet;
+    this.connections = {};
+  }
+
+  connect(id) {
+    if (this.connections[id]) return;
+    const peerConn = this.peer.connect(id);
+    const connection = new am.Connection(this.docSet, msg => {
+      console.log('send message: ', msg)
+      peerConn.send(JSON.stringify(msg));
+    });
+    this.connections[id] = connection;
+    peerConn.on('disconnected', () => {
+      connection.close();
+      delete this.connections[id];
+    });
+    connection.open();
+  }
 }
 
-const connect = (id, peer, docSet) => {
-  if (connections[id]) return;
-  const peerConn = peer.connect(id);
-  const conn = new am.Connection(docSet, msg => {
-    peerConn.send(JSON.stringify(msg));
-  });
-  connections[id] = conn;
-  peerConn.on('disconnected', () => {
-    conn.close();
-    delete connections[id];
-  });
-  conn.open();
-}
-
-
-export {
-  init,
-  connect,
-}
+export default Conn;

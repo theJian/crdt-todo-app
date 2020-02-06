@@ -8,6 +8,7 @@
     "@testing-library/user-event": "^7.1.2",
     "automerge": "^0.12.1",
     "classnames": "^2.2.6",
+    "peer": "^0.2.10",
     "peerjs": "^1.2.0",
     "react": "^16.12.0",
     "react-dom": "^16.12.0",
@@ -19,7 +20,7 @@
     "build": "react-scripts build",
     "test": "react-scripts test",
     "eject": "react-scripts eject",
-    "serve": "node server"
+    "serve": "node server & peerjs --port 9000 --path /peer"
   },
   "eslintConfig": {
     "extends": "react-app"
