@@ -9,11 +9,14 @@ class Conn {
   constructor(id, docSet) {
     const peer = new Peer(id, peerOption);
     peer.on('connection', conn => {
-      this.connect(conn.peer);
+      console.log('new connection', conn.peer)
+
       conn.on('data', msg => {
         console.log('receive message:', msg)
         this.connections[conn.peer].receiveMsg(JSON.parse(msg));
       });
+
+      this.connect(conn.peer);
     });
     this.peer = peer;
     this.docSet = docSet;
@@ -32,7 +35,9 @@ class Conn {
       connection.close();
       delete this.connections[id];
     });
-    connection.open();
+    peerConn.on('open', () => {
+      connection.open();
+    });
   }
 }
 
